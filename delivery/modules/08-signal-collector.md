@@ -1,7 +1,9 @@
+**English** | [한국어](../ko/modules/08-signal-collector.md)
+
 # Module 08 — Signal Collector (16-shard)
 
 ## Purpose
-Validator 들이 발행하는 시그널을 수집·집계. 동시 접속 N → 단일 mutex 컨텐션 → push 지연 문제를 16-shard 분산으로 해결.
+Collects and aggregates the signals emitted by the validators. Solves the N concurrent users → single-mutex contention → push latency problem by distributing across 16 shards.
 
 ## Interface
 
@@ -21,13 +23,13 @@ enum class CheatSignalType : uint16_t {
     InfiniteSlash     = 202,
     AutoAim           = 203,
     ImpossibleHit     = 204,
-    WeaponSpoof       = 205,  // Novel 축 (#09)
+    WeaponSpoof       = 205,  // Novel axis (#09)
 
     // Network (500~599)
-    PacketManipulation = 501, // Position Lie 등 — Novel 축 (#10)
+    PacketManipulation = 501, // Position Lie etc. — Novel axis (#10)
     ReplayAttack       = 502,
 
-    // ... (총 21 종)
+    // ... (21 types total)
 };
 
 const char* SignalTypeToString(CheatSignalType);
@@ -59,15 +61,15 @@ public:
 
     PlayerSignalState GetPlayerState(uint32_t uidHigh, uint32_t uidLow) const;
 
-    // 가중 점수 상위 N
+    // Top N by weighted score
     std::vector<std::pair<uint64_t, uint32_t>> GetTopSuspects(size_t n) const;
 
-    // batch flush (callback 등록 시)
+    // batch flush (when a callback is registered)
     using ReportCallback = std::function<void(const std::vector<CheatSignal>&)>;
     void SetReportCallback(ReportCallback cb);
-    void FlushToAPI();  // 주기적 호출
+    void FlushToAPI();  // called periodically
 
-    // match_uuid 라이프사이클
+    // match_uuid lifecycle
     void SetMatchUUID(uint32_t uidHigh, uint32_t uidLow, const char* uuid);
     void ClearMatchUUID(uint32_t uidHigh, uint32_t uidLow);
 
@@ -77,62 +79,62 @@ public:
 }
 ```
 
-## 16-shard 설계
+## 16-shard design
 
 ```
 shard_idx = hash(uid) % 16
 
-각 shard 가 독립 std::mutex + std::unordered_map<uid, PlayerSignalState>
+Each shard owns an independent std::mutex + std::unordered_map<uid, PlayerSignalState>
 
-→ 동시 push 시 16 개 lock 으로 분산
+→ concurrent pushes are spread across 16 locks
 ```
 
-`hash(uid)` 는 uidHigh^uidLow 의 단순 XOR. 분포 편향 시 별도 해시.
+`hash(uid)` is a plain XOR of uidHigh^uidLow. Use a separate hash if the distribution skews.
 
-## 가중 점수
+## Weighted score
 
 ```
-WeightedScore = (Low 횟수) × 1
-              + (Med 횟수) × 3
-              + (High 횟수) × 7
-              + (Crit 횟수) × 10
+WeightedScore = (Low count)  × 1
+              + (Med count)  × 3
+              + (High count) × 7
+              + (Crit count) × 10
 
-기본 보고 임계: 50
-→ 예: Low 50, Med 17, High 8, Crit 5 등이 임계 도달
+Default report threshold: 50
+→ e.g. Low 50, Med 17, High 8, Crit 5, etc. reach the threshold
 ```
 
-## match_uuid 자동 스탬핑
+## Automatic match_uuid stamping
 
-`Push` 시 `sig.matchUUID` 가 빈 값이면 shard 의 현재 매치 UUID 로 자동 스탬핑. Validator 코드는 매치 UUID 를 알 필요 없음.
+On `Push`, if `sig.matchUUID` is empty it is automatically stamped with the shard's current match UUID. Validator code does not need to know the match UUID.
 
 ## Integration Points
-- `CSCommon/Security/MSignalCollector.{h,cpp}` 신규
-- `MMatchServer::OnCreate` 에서 `SetReportCallback`
-- `MMatchServer::OnStageStart` 에서 모든 플레이어 `SetMatchUUID`
-- `MMatchServer::StageFinishGame` 에서 `ClearMatchUUID`
-- `MMatchServer::ObjectRemove` 에서 `OnPlayerLeave`
-- 주기적 `FlushToAPI` (별도 worker 또는 매치서버 메인 루프)
+- New `CSCommon/Security/MSignalCollector.{h,cpp}`
+- `SetReportCallback` in `MMatchServer::OnCreate`
+- `SetMatchUUID` for all players in `MMatchServer::OnStageStart`
+- `ClearMatchUUID` in `MMatchServer::StageFinishGame`
+- `OnPlayerLeave` in `MMatchServer::ObjectRemove`
+- Periodic `FlushToAPI` (separate worker or match-server main loop)
 
 ## Configuration
 
-| 환경변수 | 기본 |
+| Env var | Default |
 |---------|------|
 | `SIGNAL_REPORT_THRESHOLD_SCORE` | 50 |
 | `SIGNAL_FLUSH_INTERVAL_MS` | 5000 |
 | `SIGNAL_BATCH_MAX_SIZE` | 100 |
 
 ## Failure Modes
-| 조건 | 결과 |
+| Condition | Result |
 |------|------|
-| `MAPIClient` 미초기화 (env 미설정) | callback 미등록, 메모리-only 동작 |
-| API 5xx 응답 | `MAPIClient` 재시도 큐 (MAX 100) |
-| 16 shards 모두 컨텐션 | 32-shard 또는 NUMA-aware 향후 |
-| 시그널 push 실패 (메모리 부족) | 무시 (fail-open) |
+| `MAPIClient` not initialized (env not set) | Callback not registered, memory-only operation |
+| API 5xx response | `MAPIClient` retry queue (MAX 100) |
+| Contention on all 16 shards | 32-shard or NUMA-aware in the future |
+| Signal push failure (out of memory) | Ignored (fail-open) |
 
 ## Test Vectors
 
 ```
-Push 100 회 (uid=A):
+Push 100 times (uid=A):
   Low × 50, Med × 30, High × 15, Crit × 5
   → WeightedScore = 50 + 90 + 105 + 50 = 295
 
@@ -141,14 +143,14 @@ GetTopSuspects(5):
 ```
 
 ## Limitations
-- 시그널 타입별 가중치 (현재 모두 동일) — 타입별 차등 가중 향후
-- 매치 단위 reset 정책 미명시 (현재는 매치 종료 시 누적 유지)
-- 분산 매치서버 환경에서 shard 간 일관성 (현재는 단일 프로세스)
+- Per-signal-type weights (currently all identical) — differentiated weights per type in the future
+- Per-match reset policy unspecified (currently accumulation is kept across match end)
+- Cross-shard consistency in a distributed match-server environment (currently single process)
 
 ## Cross-References
-- 발행자 (Movement): [`06-movement-validator.md`](./06-movement-validator.md)
-- 발행자 (Combat): [`07-combat-validator.md`](./07-combat-validator.md)
-- 발행자 (Novel 2축): [`09-weapon-spoof-novel.md`](./09-weapon-spoof-novel.md), [`10-position-lie-novel.md`](./10-position-lie-novel.md)
-- 보고: [`11-api-client-hmac.md`](./11-api-client-hmac.md)
-- 라이프사이클: [`12-match-uuid-pipeline.md`](./12-match-uuid-pipeline.md)
-- 통합: [`../08-integration-guide.md`](../08-integration-guide.md) §2.10, §2.11
+- Emitter (Movement): [`06-movement-validator.md`](./06-movement-validator.md)
+- Emitter (Combat): [`07-combat-validator.md`](./07-combat-validator.md)
+- Emitters (2 Novel axes): [`09-weapon-spoof-novel.md`](./09-weapon-spoof-novel.md), [`10-position-lie-novel.md`](./10-position-lie-novel.md)
+- Reporting: [`11-api-client-hmac.md`](./11-api-client-hmac.md)
+- Lifecycle: [`12-match-uuid-pipeline.md`](./12-match-uuid-pipeline.md)
+- Integration: [`../08-integration-guide.md`](../08-integration-guide.md) §2.10, §2.11

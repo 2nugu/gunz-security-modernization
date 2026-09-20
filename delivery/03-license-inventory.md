@@ -1,83 +1,85 @@
+**English** | [한국어](./ko/03-license-inventory.md)
+
 # License Inventory
 
-> **독자**: 법무 / 컴플라이언스 / 보안 거버넌스. 의존성 도입 가부 판단.
-> **원칙**: 클라이언트(상용 게임 바이너리) 와 서버(백엔드 인프라) 의 라이선스 영향을 분리해서 평가.
+> **Readers**: legal / compliance / security governance. Go/no-go judgment on dependency adoption.
+> **Principle**: evaluate the license impact on the client (commercial game binary) and the server (backend infrastructure) separately.
 
 ---
 
-## 1. 의존성 일람
+## 1. Dependency List
 
-### 1.1 클라이언트 (Gunz.exe) 측
+### 1.1 Client (Gunz.exe) Side
 
-| 라이브러리 | 라이선스 | SPDX | 정적/동적 | 영향 |
+| Library | License | SPDX | Static/dynamic | Impact |
 |----------|---------|------|---------|------|
-| libsodium 1.0.20 | ISC | `ISC` | 정적 가능 | **상업 배포 가능, 라이선스 전파 없음** |
-| WinHTTP | Windows SDK EULA | (proprietary) | 동적 (system) | Windows 플랫폼 의존, 추가 영향 없음 |
-| Microsoft Detours | MIT | `MIT` | (사용 시) 정적 | 본 패키지 미사용 |
-| 기존 GunZ 의존성 | (불변) | — | — | 본 작업이 추가하지 않음 |
+| libsodium 1.0.20 | ISC | `ISC` | Static possible | **Commercial distribution allowed, no license propagation** |
+| WinHTTP | Windows SDK EULA | (proprietary) | Dynamic (system) | Windows platform dependency, no additional impact |
+| Microsoft Detours | MIT | `MIT` | Static (if used) | Not used by this package |
+| Existing GunZ dependencies | (unchanged) | — | — | Not added by this work |
 
-**클라이언트 측 신규 라이선스 의무**:
-- libsodium ISC 라이선스 텍스트를 게임 EULA / Credits / About 에 포함
-- 그 외 의무 없음 (GPL, LGPL 같은 copyleft 의무 0)
+**New client-side license obligations**:
+- Include the libsodium ISC license text in the game EULA / Credits / About
+- No other obligations (zero copyleft obligations such as GPL, LGPL)
 
-### 1.2 서버 (MatchServer.exe) 측
+### 1.2 Server (MatchServer.exe) Side
 
-| 라이브러리 | 라이선스 | SPDX | 정적/동적 | 영향 |
+| Library | License | SPDX | Static/dynamic | Impact |
 |----------|---------|------|---------|------|
-| libsodium 1.0.20 | ISC | `ISC` | 정적 | 동일 |
-| WinHTTP | Windows SDK EULA | (proprietary) | 동적 | 동일 |
+| libsodium 1.0.20 | ISC | `ISC` | Static | Same |
+| WinHTTP | Windows SDK EULA | (proprietary) | Dynamic | Same |
 
-서버는 사내 인프라이므로 외부 배포 라이선스 의무 없음.
+The server is in-house infrastructure, so there are no external distribution license obligations.
 
-### 1.3 백엔드 (community-api) 측
+### 1.3 Backend (community-api) Side
 
-| 라이브러리 | 라이선스 | SPDX | 영향 |
+| Library | License | SPDX | Impact |
 |----------|---------|------|------|
-| Python | PSF License | `PSF-2.0` | 무영향 |
-| FastAPI | MIT | `MIT` | 무영향 |
-| Starlette | BSD-3-Clause | `BSD-3-Clause` | 무영향 |
-| SQLAlchemy | MIT | `MIT` | 무영향 |
-| Alembic | MIT | `MIT` | 무영향 |
-| pydantic | MIT | `MIT` | 무영향 |
-| psycopg2 | LGPL with exception | `LGPL-3.0-or-later WITH PSPCOPG-EXCEPTION` | LGPL 이지만 동적 링크 + 예외 조항 → 사내 운영 무영향 |
-| pytest | MIT | `MIT` | 테스트 전용 |
-| uvicorn | BSD-3-Clause | `BSD-3-Clause` | 무영향 |
+| Python | PSF License | `PSF-2.0` | None |
+| FastAPI | MIT | `MIT` | None |
+| Starlette | BSD-3-Clause | `BSD-3-Clause` | None |
+| SQLAlchemy | MIT | `MIT` | None |
+| Alembic | MIT | `MIT` | None |
+| pydantic | MIT | `MIT` | None |
+| psycopg2 | LGPL with exception | `LGPL-3.0-or-later WITH PSPCOPG-EXCEPTION` | LGPL, but dynamic linking + exception clause → no impact on in-house operation |
+| pytest | MIT | `MIT` | Test only |
+| uvicorn | BSD-3-Clause | `BSD-3-Clause` | None |
 
-### 1.4 인프라
+### 1.4 Infrastructure
 
-| 컴포넌트 | 라이선스 | 영향 |
+| Component | License | Impact |
 |---------|---------|------|
-| PostgreSQL 16 | PostgreSQL License | 무영향 (BSD-like) |
-| Redis 6.x | BSD-3-Clause | 무영향 |
-| Redis 7.x+ | RSAL/SSPL (dual) | **운영 정책 검토 필요** — SaaS 재판매 시 영향. 사내 운영은 영향 없음 |
-| Valkey (Redis 7 fork) | BSD-3-Clause | Redis 7.x 대안, 영향 없음 |
-| Docker Engine | Apache 2.0 | 무영향 |
-| Python (3.11+) | PSF License | 무영향 |
+| PostgreSQL 16 | PostgreSQL License | None (BSD-like) |
+| Redis 6.x | BSD-3-Clause | None |
+| Redis 7.x+ | RSAL/SSPL (dual) | **Operating policy review needed** — affects SaaS resale. No impact on in-house operation |
+| Valkey (Redis 7 fork) | BSD-3-Clause | Alternative to Redis 7.x, no impact |
+| Docker Engine | Apache 2.0 | None |
+| Python (3.11+) | PSF License | None |
 
-**Redis 권장**:
-- 사내 운영만이면 Redis 7.x 그대로 사용 가능
-- SaaS 형태로 재판매할 가능성이 있다면 **Redis 6.x 또는 Valkey** 권장
-- 본 패키지는 Redis 의존성을 캐시 계층으로만 사용 (필수 아님, 비활성화 가능)
-
----
-
-## 2. 라이선스 호환성 매트릭스
-
-```
-도입 라이브러리  →  본 작업 코드  →  GunZ 클라이언트(상용)
-   (ISC)              (회사 정책)        (회사 IP)
-   호환 ✓               호환 ✓              영향 없음 ✓
-
-도입 라이브러리  →  본 작업 코드  →  GunZ 서버(사내)
-   (ISC/MIT)            (회사 정책)        (회사 IP)
-   호환 ✓               호환 ✓              영향 없음 ✓
-```
-
-본 패키지 도입 시 발생하는 **유일한 의무**: libsodium ISC 라이선스 텍스트 포함.
+**Redis recommendation**:
+- For in-house operation only, Redis 7.x can be used as-is
+- If there is any possibility of resale in SaaS form, **Redis 6.x or Valkey** is recommended
+- This package uses the Redis dependency only as a cache layer (not required, can be disabled)
 
 ---
 
-## 3. libsodium ISC 라이선스 전문
+## 2. License Compatibility Matrix
+
+```
+Adopted library  →  This work's code  →  GunZ client (commercial)
+   (ISC)              (company policy)      (company IP)
+   compatible ✓         compatible ✓          no impact ✓
+
+Adopted library  →  This work's code  →  GunZ server (in-house)
+   (ISC/MIT)            (company policy)      (company IP)
+   compatible ✓         compatible ✓          no impact ✓
+```
+
+The **only obligation** arising from adopting this package: include the libsodium ISC license text.
+
+---
+
+## 3. Full Text of the libsodium ISC License
 
 ```
 ISC License
@@ -100,51 +102,51 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ---
 
-## 4. 본 패키지 코드의 라이선스
+## 4. License of This Package's Code
 
-본 패키지에 포함된 신규 코드 (`Security::*` 네임스페이스, FastAPI 라우터 등) 는 **사측 자유 사용**. NDA, 라이선스 협상, 양도 계약 등의 절차 없이 채택 가능.
+The new code included in this package (`Security::*` namespace, FastAPI routers, etc.) is **free for the company to use**. It can be adopted without NDA, license negotiation, assignment agreements, or similar procedures.
 
-작성자가 보유하는 권리는 README 첫머리에 명시된 2 항목 (공개 자료 기반 후속 분석 + 비상업 OSS 공개) 이며, 사측 채택 여부와 무관하게 유지됩니다.
+The rights retained by the author are the 2 items stated at the top of the README (continued follow-up analysis based on public materials + non-commercial OSS release), and they remain in effect regardless of whether the company adopts the package.
 
-추가 외부 의존성 라이선스 의무는 §3 의 libsodium ISC 텍스트 포함 한 가지뿐.
+The only additional external dependency license obligation is inclusion of the libsodium ISC text in §3.
 
 ---
 
-## 5. 출처 / 베이스 트리 라이선스
+## 5. Source / Base Tree Licenses
 
-본 작업은 다음 공개 트리를 참조했다:
+This work referenced the following public trees:
 
-| 트리 | 공개 위치 | 라이선스 표기 |
+| Tree | Public location | License notice |
 |------|----------|--------------|
-| GunZ-The-Duel | GitHub | (저장소 LICENSE 파일 참조) |
-| RefinedGunz | GitHub | (저장소 LICENSE 파일 참조) |
-| Gunz1.5-main | GitHub | (저장소 LICENSE 파일 참조) |
+| GunZ-The-Duel | GitHub | (see the repository LICENSE file) |
+| RefinedGunz | GitHub | (see the repository LICENSE file) |
+| Gunz1.5-main | GitHub | (see the repository LICENSE file) |
 
-본 패키지에 포함된 신규 코드 (`Security::*`) 는 위 트리에 존재하지 않는다. 통합 가이드 ([`08-integration-guide.md`](./08-integration-guide.md)) 가 참조하는 패치 사이트 (`MServer.cpp`, `MMatchServer.cpp` 등) 의 파일 자체는 회사가 보유하는 동등 위치에 통합된다 — **본 패키지가 회사 측 소스를 재배포하지 않음**.
-
----
-
-## 6. 컴플라이언스 체크리스트
-
-회사가 본 패키지 도입 시 진행할 항목:
-
-- [ ] libsodium ISC 라이선스 텍스트를 게임 EULA / Credits / 시작 화면 라이선스 표시에 포함
-- [ ] Redis 7.x 사용 시 SaaS 재판매 가능성 검토 → 필요 시 Redis 6.x 또는 Valkey 로 다운그레이드
-- [ ] 신규 의존성을 회사 OSS 검토 시스템에 등록
-- [ ] (선택) 정적 분석 / 보안 감사 — 사내 보안팀 검토
+The new code included in this package (`Security::*`) does not exist in the trees above. The files at the patch sites referenced by the integration guide ([`08-integration-guide.md`](./08-integration-guide.md)) (`MServer.cpp`, `MMatchServer.cpp`, etc.) are integrated at the equivalent locations in the company's own copy — **this package does not redistribute company-side source**.
 
 ---
 
-## 7. 회사가 자주 묻는 질문 (선제 답변)
+## 6. Compliance Checklist
 
-**Q. libsodium 대신 OpenSSL 도입 가능한가?**
-A. 가능. AES-256-GCM 은 OpenSSL `EVP_aead_aes_256_gcm`, X25519 는 `EVP_PKEY_X25519` 로 동등 구현. 다만 OpenSSL 은 Apache 2.0 (3.0+) 또는 dual SSLeay+OpenSSL (1.1.1) 로 의존성 분량 큼. libsodium 이 ISC 단일이라 컴플라이언스 단순.
+Items for the company to carry out when adopting this package:
 
-**Q. AES-NI 미지원 호스트는?**
-A. `MPacketCrypterV2::InitKey` 가 즉시 false 반환 → 핸드셰이크 단계에서 명시적 실패. 이전 침묵 드롭 회귀 방지. 라이브 서비스 도입 시 모든 매치서버 호스트에 AES-NI 보유 확인 필수.
+- [ ] Include the libsodium ISC license text in the game EULA / Credits / startup-screen license notice
+- [ ] If using Redis 7.x, review the possibility of SaaS resale → downgrade to Redis 6.x or Valkey if needed
+- [ ] Register the new dependencies in the company's OSS review system
+- [ ] (Optional) Static analysis / security audit — review by the in-house security team
 
-**Q. WinHTTP 외 대안은?**
-A. cURL (MIT/X derivative, 무영향) 또는 회사 사내 HTTP 클라이언트 사용 가능. WinHTTP 선택 이유는 외부 의존성 0 (Windows SDK 기본).
+---
 
-**Q. 본 패키지의 코드를 회사 자체 트리에 머지하면 작성자가 나중에 권리 주장 가능한가?**
-A. 본 패키지는 자유 사용으로 공개되어 있으며 사측은 별도 계약 없이 채택 가능. 작성자는 (a) 공개 자료 기반 후속 분석 진행 (b) 비상업 OSS 라이선스로 GitHub 공개 두 권리만 보유하며, 이는 사측 채택과 무관하게 유지됨. 사측이 본 패키지를 채택하든 안 하든 그 외의 권리 주장 의도는 없음.
+## 7. Frequently Asked Questions from the Company (Pre-emptive Answers)
+
+**Q. Can OpenSSL be used instead of libsodium?**
+A. Yes. AES-256-GCM can be implemented equivalently with OpenSSL `EVP_aead_aes_256_gcm`, X25519 with `EVP_PKEY_X25519`. However, OpenSSL is Apache 2.0 (3.0+) or dual SSLeay+OpenSSL (1.1.1), a larger dependency footprint. libsodium being ISC-only keeps compliance simple.
+
+**Q. What about hosts without AES-NI?**
+A. `MPacketCrypterV2::InitKey` returns false immediately → explicit failure at the handshake stage. Prevents the earlier silent-drop regression. When adopting for the live service, confirming AES-NI on every match server host is mandatory.
+
+**Q. Alternatives to WinHTTP?**
+A. cURL (MIT/X derivative, no impact) or the company's in-house HTTP client can be used. WinHTTP was chosen because it has zero external dependencies (part of the Windows SDK).
+
+**Q. If this package's code is merged into the company's own tree, can the author claim rights later?**
+A. This package is released for free use and the company can adopt it without a separate agreement. The author retains only two rights: (a) continued follow-up analysis based on public materials, (b) GitHub release under a non-commercial OSS license, and these remain in effect regardless of the company's adoption. Whether or not the company adopts this package, there is no intent to assert any other rights.

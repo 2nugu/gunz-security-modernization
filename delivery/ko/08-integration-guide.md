@@ -1,80 +1,80 @@
-**English** | [한국어](./ko/08-integration-guide.md)
+[English](../08-integration-guide.md) | **한국어**
 
 # Integration Guide
 
-> **Audience**: integration engineers
-> **Purpose**: specification of **insertion points / call signatures / pseudocode** for integrating the modules in this package into the company-owned tree.
-> **Principle**: this guide does not ship the company's source files as direct patches. Locate the equivalent position in the company tree and apply the pseudocode.
+> **독자**: 통합 작업 엔지니어
+> **목적**: 본 패키지 모듈을 회사 보유 트리에 통합할 때의 **삽입 위치 / 호출 시그니처 / 의사코드** 명세.
+> **원칙**: 본 가이드는 회사 측 소스 파일을 직접 패치 형태로 제공하지 않는다. 회사 트리에서 동등 위치를 찾아 의사코드를 적용한다.
 
 ---
 
-## 1. Integration workflow (overview)
+## 1. 통합 작업 흐름 (전체)
 
 ```
-1. Integrate new module sources (Layer A under modules/)
-   ├─ Add modules to CSCommon/ or the equivalent shared library
-   ├─ Add libsodium dependency
-   └─ Build verification
+1. 신규 모듈 소스 통합 (modules/ 의 Layer A)
+   ├─ CSCommon/ 또는 동등 공유 라이브러리에 모듈 추가
+   ├─ libsodium 의존성 추가
+   └─ 빌드 검증
 
-2. Integrate Layer B patch sites (this guide)
-   ├─ Match server: IOCP callbacks
-   ├─ Match server: OnCommand handlers
-   ├─ Match server: stage lifecycle
-   ├─ Client: SendCommand branch
-   └─ Client: PostShot/PostHit macros
+2. Layer B 패치 사이트 통합 (본 가이드)
+   ├─ 매치서버 측 IOCP 콜백
+   ├─ 매치서버 측 OnCommand 핸들러
+   ├─ 매치서버 측 스테이지 라이프사이클
+   ├─ 클라이언트 측 SendCommand 분기
+   └─ 클라이언트 측 PostShot/PostHit 매크로
 
-3. Register new packet IDs
+3. 신규 패킷 ID 등록
    ├─ MSGID_COMMAND_V2 = 102
    └─ MC_MATCH_ECDHE_CHALLENGE..HIT_TICK = 2901..2905
 
-4. Add environment variables / settings
+4. 환경변수 / 설정 추가
    ├─ COMMUNITY_API_URL
    ├─ MATCH_RESULT_WEBHOOK_SECRET
-   └─ DDoS / anti-cheat thresholds (optional)
+   └─ DDoS / 안티치트 임계값 (선택)
 
-5. community-api / DB infrastructure (Phase F)
+5. community-api / DB 인프라 (Phase F)
 ```
 
 ---
 
-## 2. Match server integration points
+## 2. 매치서버 통합 지점
 
-### 2.1 IOCP Accept callback — DDoS L1
+### 2.1 IOCP Accept 콜백 — DDoS L1
 
-**Location**: the `RCP_IO_ACCEPT` handler in `MServer::RCPCallback`
+**위치**: `MServer::RCPCallback` 의 `RCP_IO_ACCEPT` 핸들러
 
-**Insertion point**: *immediately before* the MCommObject allocation. If the gate is not passed, alloc cost is zero.
+**삽입 시점**: MCommObject 할당 *직전*. 게이트 통과 못 하면 alloc 부담 0.
 
 ```cpp
 case RCP_IO_ACCEPT:
 {
-    // [BEFORE] existing code: right after extracting szIP
+    // [BEFORE] 기존 코드: szIP 추출 직후
     char szIP[16];
     GetClientIP(nKey, szIP);
 
-    // [INSERT] DDoS L1 gate
+    // [INSERT] DDoS L1 게이트
     if (!Security::MConnectRateLimit::Instance().CheckAndRecord(szIP)) {
         m_RealCPNet.Disconnect(nKey);
         return;
     }
 
-    // [AFTER] existing MCommObject alloc + InitCryptCommObject
+    // [AFTER] 기존 MCommObject alloc + InitCryptCommObject
     ...
 }
 ```
 
-**Call signature**: `bool CheckAndRecord(const char* szIP)` — true=pass, false=block.
+**호출 시그니처**: `bool CheckAndRecord(const char* szIP)` — true=통과, false=차단.
 
-### 2.2 IOCP Read callback — DDoS L2 / L3
+### 2.2 IOCP Read 콜백 — DDoS L2 / L3
 
-**Location**: the `RCP_IO_READ` handler in `MServer::RCPCallback`
+**위치**: `MServer::RCPCallback` 의 `RCP_IO_READ` 핸들러
 
-**Insertion point**: *immediately before* the `pCmdBuilder->Read` call.
+**삽입 시점**: `pCmdBuilder->Read` 호출 *직전*.
 
 ```cpp
 case RCP_IO_READ:
 {
-    // [BEFORE] right after LockCommList + acquiring pCommObj
+    // [BEFORE] LockCommList + pCommObj 획득 직후
     LockCommList();
     MCommObject* pCommObj = GetCommObject(nKey);
     if (!pCommObj) { UnlockCommList(); return; }
@@ -95,25 +95,25 @@ case RCP_IO_READ:
         return;
     }
 
-    // [AFTER] existing pCmdBuilder->Read flow
+    // [AFTER] 기존 pCmdBuilder->Read 흐름
     ...
 }
 ```
 
-**Call signatures**:
-- `bool MPacketRateLimit::RecordAndCheck()` — counts 1 packet, true=pass
-- `bool MBandwidthThrottle::RecordAndCheck(size_t bytes)` — accumulates bytes, true=pass
+**호출 시그니처**:
+- `bool MPacketRateLimit::RecordAndCheck()` — 패킷 1 개 카운트, true=통과
+- `bool MBandwidthThrottle::RecordAndCheck(size_t bytes)` — 바이트 누적, true=통과
 
-### 2.3 ECDHE handshake start
+### 2.3 ECDHE 핸드셰이크 시작
 
-**Location**: `MServer::InitCryptCommObject` or the equivalent function (right after accept)
+**위치**: `MServer::InitCryptCommObject` 또는 동등 함수 (accept 직후)
 
 ```cpp
 void MServer::InitCryptCommObject(MCommObject* pCommObj) {
-    // [BEFORE] existing v1 seed key generation
+    // [BEFORE] 기존 v1 seed key 생성
     pCommObj->GetCrypter()->Init(MMakeSeedKey(...));
 
-    // [INSERT] generate ECDHE key pair + send Challenge
+    // [INSERT] ECDHE 키쌍 생성 + Challenge 송신
     auto* kxState = new Security::KeyExchangeState();
     kxState->ServerGenerateKeyPair();
     pCommObj->SetKxState(kxState);
@@ -121,17 +121,17 @@ void MServer::InitCryptCommObject(MCommObject* pCommObj) {
     MCommand* pChallenge = new MCommand(...);
     pChallenge->SetID(MC_MATCH_ECDHE_CHALLENGE);
     pChallenge->AddParameter(new MCmdParamBlob(kxState->GetServerPublic(), 32));
-    SendCommand(pCommObj, pChallenge);  // sent over v1
+    SendCommand(pCommObj, pChallenge);  // v1 으로 송신
     delete pChallenge;
 
-    // [AFTER] existing ReplyConnect
+    // [AFTER] 기존 ReplyConnect
     ...
 }
 ```
 
-### 2.4 ECDHE Response receipt
+### 2.4 ECDHE Response 수신
 
-**Location**: new case in `MMatchServer::OnCommand`
+**위치**: `MMatchServer::OnCommand` 의 신규 case
 
 ```cpp
 case MC_MATCH_ECDHE_RESPONSE:
@@ -141,7 +141,7 @@ case MC_MATCH_ECDHE_RESPONSE:
 
     auto* kxState = pCommObj->GetKxState();
     if (!kxState->ServerDeriveSessionKeys((BYTE*)pBlob)) {
-        // handshake failed, terminate session
+        // 핸드셰이크 실패, 세션 종료
         Disconnect(uid);
         return;
     }
@@ -153,15 +153,15 @@ case MC_MATCH_ECDHE_RESPONSE:
     pCommObj->GetCommandBuilder()->InitCryptV2(pCommObj->GetCrypterV2());
     pCommObj->SetV2Active(true);
 
-    // wipe the ephemeral private key immediately
+    // 임시 비밀키 즉시 소거
     kxState->WipePrivateKey();
     break;
 }
 ```
 
-### 2.5 IP masking — the simplest Layer B patch
+### 2.5 IP 마스킹 — Layer B 가장 단순한 패치
 
-**Location 1**: `MMatchServer::ResponsePeerList` (peer blob build section)
+**위치 1**: `MMatchServer::ResponsePeerList` (peer blob 빌드 부분)
 
 ```cpp
 // [BEFORE]
@@ -173,13 +173,13 @@ pBlob->dwIP = 0;
 pBlob->nPort = 0;
 ```
 
-**Location 2**: same pattern in `MMatchServer::StageEnterBattle`.
+**위치 2**: `MMatchServer::StageEnterBattle` 의 동일 패턴.
 
-**Remove existing branches**: remove all conditional masking branches for admin / eventTeam / forcedNAT. Mask **unconditionally**.
+**기존 분기 제거**: admin / eventTeam / forcedNAT 조건부 마스킹 분기 전부 제거. **무조건** 마스킹.
 
-### 2.6 Anti-cheat signal handler — POSITION_TICK
+### 2.6 안티치트 시그널 핸들러 — POSITION_TICK
 
-**Location**: new case in `MMatchServer::OnCommand`
+**위치**: `MMatchServer::OnCommand` 의 신규 case
 
 ```cpp
 case MC_MATCH_POSITION_TICK:
@@ -187,7 +187,7 @@ case MC_MATCH_POSITION_TICK:
     void* pBlob; int nLen;
     pCommand->GetParameter(&pBlob, 0, MPT_BLOB);
 
-    // use only the first 4B fTime of ZPACKEDBASICINFO + the next 6B (short posX/Y/Z)
+    // ZPACKEDBASICINFO 의 첫 4B fTime + 다음 6B (short posX/Y/Z) 만 사용
     short sPosX = ((short*)pBlob)[2];
     short sPosY = ((short*)pBlob)[3];
     short sPosZ = ((short*)pBlob)[4];
@@ -199,16 +199,16 @@ case MC_MATCH_POSITION_TICK:
 
     pObj->GetPositionHistory().Record((float)sPosX, (float)sPosY, (float)sPosZ, nowMs);
 
-    // call the Validator
+    // Validator 호출
     Security::MMovementValidator::Instance().Validate(
         sid.High, sid.Low, (float)sPosX, (float)sPosY, (float)sPosZ, nowMs);
     break;
 }
 ```
 
-### 2.7 Anti-cheat signal handler — ATTACK_TICK
+### 2.7 안티치트 시그널 핸들러 — ATTACK_TICK
 
-**Location**: new case in `MMatchServer::OnCommand`
+**위치**: `MMatchServer::OnCommand` 의 신규 case
 
 ```cpp
 case MC_MATCH_ATTACK_TICK:
@@ -229,7 +229,7 @@ case MC_MATCH_ATTACK_TICK:
     Security::MCombatValidator::Instance().ValidateAttack(
         sid.High, sid.Low, wcls, nowMs);
 
-    // (b) WeaponSpoof inline check (Novel axis)
+    // (b) WeaponSpoof inline check (Novel 축)
     auto& items = pObj->GetCharInfo()->m_EquipedItem;
     bool match = false;
     for (auto slot : {MMCIP_MELEE, MMCIP_PRIMARY, MMCIP_SECONDARY}) {
@@ -251,11 +251,11 @@ case MC_MATCH_ATTACK_TICK:
 }
 ```
 
-### 2.8 Anti-cheat signal handler — HIT_TICK
+### 2.8 안티치트 시그널 핸들러 — HIT_TICK
 
-**Important**: the HIT_TICK handler performs the following validations **in order** — (1) PositionLie cross-check (Novel #10), (2) Damage validation + Server-Side Override (Module 13), (3) ValidateHit (Module 07). Once the Damage Validator is applied, the victim HP deduction uses **the server-computed serverDmg, not the client-reported dmg** — closing the victim-auth blind spot (damage reduction / invincibility / HP manipulation).
+**중요**: HIT_TICK 핸들러는 다음 검증을 **순서대로** 수행한다 — (1) PositionLie 크로스체크 (Novel #10), (2) Damage 검증 + Server-Side Override (Module 13), (3) ValidateHit (Module 07). Damage Validator 가 적용되면 victim HP 차감은 **클라 보고 dmg 가 아니라 서버 계산 serverDmg** 로 이루어진다 — victim-auth 사각지대 (데미지 감소 / 무적 / HP 조작) 봉쇄.
 
-**Location**: new case in `MMatchServer::OnCommand`
+**위치**: `MMatchServer::OnCommand` 의 신규 case
 
 ```cpp
 case MC_MATCH_HIT_TICK:
@@ -272,14 +272,14 @@ case MC_MATCH_HIT_TICK:
     auto* pAttacker = GetObject(atkUID);
     if (!pAttacker || !pObj /*victim*/->CheckAlive()) break;
 
-    // victim position comes from the server ring buffer (blocks client position manipulation)
+    // 피해자 위치는 서버 링버퍼 (클라 위치 조작 봉쇄)
     float vicXYZ[3];
     long long vicTMs;
     if (!pObj->GetPositionHistory().GetLatest(vicXYZ, &vicTMs)) break;
 
     auto wcls = Security::ClassifyMMatchWeapon(weaponType);
 
-    // (a) PositionLie cross-check (Novel axis)
+    // (a) PositionLie 크로스체크 (Novel 축)
     float atkSrvXYZ[3]; long long atkSrvTMs;
     if (pAttacker->GetPositionHistory().GetLatest(atkSrvXYZ, &atkSrvTMs)) {
         float dx = srcPos[0] - atkSrvXYZ[0];
@@ -301,12 +301,12 @@ case MC_MATCH_HIT_TICK:
         }
     }
 
-    // (b) Server-Side Damage Override + damage-reduction hack validation (Module 13)
+    // (b) Server-Side Damage Override + 데미지 감소핵 검증 (Module 13)
     float dx = atkSrvXYZ[0] - vicXYZ[0];
     float dy = atkSrvXYZ[1] - vicXYZ[1];
     float dz = atkSrvXYZ[2] - vicXYZ[2];
     float dist = sqrtf(dx*dx + dy*dy + dz*dz);
-    Security::BodyPart part = Security::BodyPart::Body;  // hit zone to be refined later
+    Security::BodyPart part = Security::BodyPart::Body;  // 향후 hit zone 정밀화
 
     float serverDmg = Security::MDamageValidator::Instance()
         .ComputeServerDamage(weaponType, dist, part);
@@ -325,15 +325,15 @@ case MC_MATCH_HIT_TICK:
             pVictim->GetUID().High, pVictim->GetUID().Low, sig);
     }
 
-    // actual victim HP deduction — mode branch (Module 13 §11)
+    // 실제 victim HP 차감 — 모드 분기 (Module 13 §11)
     bool mitigation = Security::MDamageValidator::Instance().IsMitigationMode();
     if (mitigation) {
-        pVictim->Damage(serverDmg);   // Mitigation Mode: neutralizes the hack's effect itself
+        pVictim->Damage(serverDmg);   // Mitigation Mode: 핵 효과 자체 무력화
     } else {
-        pVictim->Damage(dmg);          // Detection-Only Mode: signal only, existing flow preserved
+        pVictim->Damage(dmg);          // Detection-Only Mode: 시그널만, 기존 흐름 유지
     }
 
-    // HP consistency tracking
+    // HP 일관성 추적
     Security::MDamageValidator::Instance().RecordHit(
         pVictim->GetUID().High, pVictim->GetUID().Low, serverDmg, NowMs());
 
@@ -345,13 +345,13 @@ case MC_MATCH_HIT_TICK:
 }
 ```
 
-### 2.9 Stage lifecycle — match_uuid
+### 2.9 스테이지 라이프사이클 — match_uuid
 
-**Location**: the `pStage->StartGame() == true` branch in `MMatchServer::OnStageStart`
+**위치**: `MMatchServer::OnStageStart` 의 `pStage->StartGame() == true` 분기
 
 ```cpp
 if (pStage->StartGame() == true) {
-    // [INSERT] issue match_uuid + inject into all players
+    // [INSERT] match_uuid 발급 + 모든 플레이어에 주입
     pStage->GenerateMatchUUID();
     const char* szUUID = pStage->GetMatchUUID();
 
@@ -363,7 +363,7 @@ if (pStage->StartGame() == true) {
 }
 ```
 
-**Location 2**: `MMatchServer::StageFinishGame`
+**위치 2**: `MMatchServer::StageFinishGame`
 
 ```cpp
 auto end = pStage->GetObjEnd();
@@ -374,21 +374,21 @@ for (auto it = pStage->GetObjBegin(); it != end; ++it) {
 pStage->ClearMatchUUID();
 ```
 
-### 2.9b Periodic HPConsistency call (Module 13)
+### 2.9b HPConsistency 주기 호출 (Module 13)
 
-**Location**: inside the `for(MMatchObjectList::iterator ...)` object iteration loop in `MMatchServer::OnRun`
+**위치**: `MMatchServer::OnRun` 의 `for(MMatchObjectList::iterator ...)` 객체 순회 루프 안
 
 ```cpp
-// at function start — 1-second gate
+// 함수 시작 부 — 1초 게이트
 static unsigned long int s_lastHPCheckMs = 0;
 const bool runHPCheck = (nGlobalClock - s_lastHPCheckMs > 1000);
 if (runHPCheck) s_lastHPCheckMs = nGlobalClock;
 
-// inside the object iteration
+// 객체 순회 안
 if (pObj->GetCharInfo()) {
-    // ... [EXISTING] DBCachingData handling
+    // ... [기존] DBCachingData 처리
 
-    // [INSERT] HPConsistency validation — active characters only
+    // [INSERT] HPConsistency 검증 — 활성 캐릭터만
     if (runHPCheck && pObj->GetCharInfo()->m_nHP > 0) {
         const MUID& uid = pObj->GetUID();
         Security::MDamageValidator::Instance().RecordHPSnapshot(
@@ -401,13 +401,13 @@ if (pObj->GetCharInfo()) {
 }
 ```
 
-**Why 1Hz**: the HPConsistency window is 5 seconds (`HP_CONSISTENCY_WINDOW_MS=5000`), so 1Hz accumulates 5 samples on average. A faster period only adds CPU cost with negligible gain in detection power. A slower period hits the insufficient-window guard (`hpSamples.size() < 2 || dt < window/2`) and the validation is skipped.
+**왜 1Hz 인가**: HPConsistency 의 윈도우가 5초 (`HP_CONSISTENCY_WINDOW_MS=5000`) 라 1Hz 면 평균 5개 샘플 누적. 더 빠른 주기는 CPU 비용만 증가하고 검출력 향상 미미. 더 느린 주기는 윈도우 부족 가드 (`hpSamples.size() < 2 || dt < window/2`) 에 걸려 검증 스킵.
 
-**HP 0 (death) guard**: the window ends at the moment of death. A new window accumulates from the next life. The first sample after respawn is the baseline.
+**HP 0 (사망) 가드**: 사망 시점에 윈도우 종료. 다음 라이프부터 새 윈도우 누적. 리스폰 후 첫 샘플은 baseline.
 
-### 2.10 ObjectRemove — preventing state leaks
+### 2.10 ObjectRemove — 상태 누수 방지
 
-**Location**: the player-removal branch in `MMatchServer::ObjectRemove`
+**위치**: `MMatchServer::ObjectRemove` 의 player 제거 분기
 
 ```cpp
 void MMatchServer::ObjectRemove(MUID& uid) {
@@ -416,16 +416,16 @@ void MMatchServer::ObjectRemove(MUID& uid) {
     Security::MCombatValidator::Instance().OnPlayerLeave(uid.High, uid.Low);
     Security::MSignalCollector::Instance().OnPlayerLeave(uid.High, uid.Low);
 
-    // [AFTER] existing removal flow
+    // [AFTER] 기존 제거 흐름
     ...
 }
 ```
 
-### 2.11 MMatchServer::OnCreate — API client initialization
+### 2.11 MMatchServer::OnCreate — API 클라이언트 초기화
 
 ```cpp
 bool MMatchServer::OnCreate() {
-    // [INSERT] community-api client initialization
+    // [INSERT] community-api 클라이언트 초기화
     const char* apiUrl = std::getenv("COMMUNITY_API_URL");
     const char* secret = std::getenv("MATCH_RESULT_WEBHOOK_SECRET");
     if (apiUrl && secret && apiUrl[0] && secret[0]) {
@@ -450,38 +450,38 @@ bool MMatchServer::OnCreate() {
                 Security::MAPIClient::Instance().SendCheatReportsAsync(reports);
             });
     }
-    // if env is unset, no callback is registered → memory-only operation (server can start in local development)
+    // env 미설정 시 callback 미등록 → 메모리-only 동작 (로컬 개발 시 서버 기동 가능)
 
-    // [AFTER] existing OnCreate flow
+    // [AFTER] 기존 OnCreate 흐름
     ...
 }
 ```
 
 ---
 
-## 3. Client integration points
+## 3. 클라이언트 통합 지점
 
-### 3.1 SendCommand branch — when v2 is active
+### 3.1 SendCommand 분기 — v2 활성화 시
 
-**Location**: `MClient::SendCommand` or the equivalent function
+**위치**: `MClient::SendCommand` 또는 동등 함수
 
 ```cpp
 void MClient::SendCommand(MCommand* pCommand) {
-    // [INSERT] branch on whether V2 is active
+    // [INSERT] V2 활성화 여부 분기
     if (IsV2Active()) {
-        // allocate the buffer with GZ_V2_OVERHEAD(36) extra bytes
-        // MSGID_COMMAND_V2 + v2 Encrypt inside MakeCmdPacket
+        // 버퍼를 GZ_V2_OVERHEAD(36) 만큼 더 할당
+        // MakeCmdPacket 내부에서 MSGID_COMMAND_V2 + v2 Encrypt
         SendMsgCommandV2(pCommand);
     } else {
-        // [EXISTING] v1 path
+        // [EXISTING] v1 경로
         SendMsgCommandV1(pCommand);
     }
 }
 ```
 
-### 3.2 ECDHE Challenge handler — client
+### 3.2 ECDHE Challenge 핸들러 — 클라
 
-**Location**: new case in `MMatchClient::OnCommand`
+**위치**: `MMatchClient::OnCommand` 의 신규 case
 
 ```cpp
 case MC_MATCH_ECDHE_CHALLENGE:
@@ -496,14 +496,14 @@ case MC_MATCH_ECDHE_CHALLENGE:
     Security::DeriveSymmetricKey(kxState, symKey);
     GetCrypterV2()->InitKey(symKey, 32);
 
-    // send RESPONSE — over the v1 path
+    // RESPONSE 송신 — v1 경로로
     MCommand* pResponse = new MCommand(...);
     pResponse->SetID(MC_MATCH_ECDHE_RESPONSE);
     pResponse->AddParameter(new MCmdParamBlob(kxState->GetClientPublic(), 32));
     SendCommand(pResponse);  // v1
     delete pResponse;
 
-    // activate v2 *after* sending
+    // 송신 *후* 에 v2 활성화
     GetCommandBuilder()->InitCryptV2(GetCrypterV2());
     SetV2Active(true);
 
@@ -512,15 +512,15 @@ case MC_MATCH_ECDHE_CHALLENGE:
 }
 ```
 
-**Important**: `SetV2Active(true)` flips *after* the RESPONSE is sent. Otherwise the RESPONSE itself goes out as a v2 frame and server decryption fails.
+**중요**: `SetV2Active(true)` 는 RESPONSE 송신 *후* 에 flip. 그렇지 않으면 RESPONSE 자체가 v2 프레임으로 나가서 서버 디크립트 실패.
 
-### 3.3 Adding ATTACK_TICK to the PostShot macro
+### 3.3 PostShot 매크로에 ATTACK_TICK 추가
 
-**Location**: the `ZPostShot` / `ZPostShotMelee` macros in `Gunz/ZPost.h`
+**위치**: `Gunz/ZPost.h` 의 `ZPostShot` / `ZPostShotMelee` 매크로
 
 ```cpp
 #define ZPostShot(...) do { \
-    /* [EXISTING] existing ZPOSTCMD1(MC_PEER_SHOT, ...) */ \
+    /* [EXISTING] 기존 ZPOSTCMD1(MC_PEER_SHOT, ...) */ \
     ...; \
     /* [INSERT] ATTACK_TICK piggyback */ \
     ZPostAttackTick(); \
@@ -539,19 +539,19 @@ case MC_MATCH_ECDHE_CHALLENGE:
 } while(0)
 ```
 
-### 3.4 Adding HIT_TICK to the OnDamaged hook — Victim-Authoritative
+### 3.4 OnDamaged 훅에 HIT_TICK 추가 — Victim-Authoritative
 
-**Location**: `ZMyCharacter::OnDamaged`
+**위치**: `ZMyCharacter::OnDamaged`
 
 ```cpp
 void ZMyCharacter::OnDamaged(MUID uidAttacker, ZObject* pAttacker, ...) {
-    // [EXISTING] existing damage handling
+    // [EXISTING] 기존 데미지 처리
     ...
 
-    // [INSERT] HIT_TICK report — victim-authoritative
-    if (pAttacker && pAttacker != this  // exclude self-damage
-        && /* exclude NPCs */
-        && /* exclude self-destruct / fall damage */
+    // [INSERT] HIT_TICK 보고 — 피해자 권위
+    if (pAttacker && pAttacker != this  // self-damage 제외
+        && /* NPC 제외 */
+        && /* 자폭/낙사 제외 */
         && weaponType != MWT_NONE) {
         rvector srcPos = pAttacker->GetPosition();
         ZPostHitTick(uidAttacker, weaponType, fDmg, srcPos);
@@ -562,42 +562,42 @@ void ZMyCharacter::OnDamaged(MUID uidAttacker, ZObject* pAttacker, ...) {
     ZPOSTCMD4(MC_MATCH_HIT_TICK, atkUID, wt, dmg, srcPos)  /* CLOAK_CMD_ID factor=49217 */
 ```
 
-### 3.5 POSITION_TICK piggyback in ZGame::Tick
+### 3.5 ZGame::Tick 에 POSITION_TICK piggyback
 
-**Location**: the 32 Hz position send section in `ZGame.cpp`
+**위치**: `ZGame.cpp` 의 32 Hz 위치 송신 부분
 
 ```cpp
 void ZGame::Tick() {
     // [EXISTING] peer broadcast
     ZPOSTCMD1(MC_PEER_BASICINFO, blob);
 
-    // [INSERT] send to the server at the same time
-    ZPOSTCMD1(MC_MATCH_POSITION_TICK, blob);  // reuses ZPACKEDBASICINFO as-is
-    // ZNewCmd routes automatically via the MCDT_MACHINE2MACHINE flag
+    // [INSERT] 서버에도 동시 송신
+    ZPOSTCMD1(MC_MATCH_POSITION_TICK, blob);  // ZPACKEDBASICINFO 그대로 재사용
+    // ZNewCmd 가 MCDT_MACHINE2MACHINE 플래그로 자동 라우팅
 }
 ```
 
 ---
 
-## 4. Registering new packet IDs
+## 4. 신규 패킷 ID 등록
 
-**File**: `MSharedCommandTable.h` or equivalent
+**파일**: `MSharedCommandTable.h` 또는 동등
 
 ```cpp
-// packet framing
+// 패킷 프레이밍
 #define MSGID_COMMAND_V2  102
 
-// match server ↔ client ECDHE
+// 매치서버 ↔ 클라 ECDHE
 #define MC_MATCH_ECDHE_CHALLENGE  2901
 #define MC_MATCH_ECDHE_RESPONSE   2902
 
-// match server ↔ client anti-cheat (MACHINE2MACHINE)
+// 매치서버 ↔ 클라 안티치트 (MACHINE2MACHINE)
 #define MC_MATCH_POSITION_TICK    2903
 #define MC_MATCH_ATTACK_TICK      2904
 #define MC_MATCH_HIT_TICK         2905
 ```
 
-**File**: the `MSCT_MATCHSERVER | MSCT_CLIENT` block in `MSharedCommandTable.cpp`
+**파일**: `MSharedCommandTable.cpp` 의 `MSCT_MATCHSERVER | MSCT_CLIENT` 블록
 
 ```cpp
 ADD_COMMAND("Match.ECDHEChallenge", MC_MATCH_ECDHE_CHALLENGE, MCDT_MATCHSERVER, MCDT_CLIENT);
@@ -622,11 +622,11 @@ ADD_COMMAND_PARAM(MPT_FLOAT_ARRAY_3, "SrcPos");
 
 ---
 
-## 5. Build system changes
+## 5. 빌드 시스템 변경
 
-### 5.1 libsodium dependency
+### 5.1 libsodium 의존성
 
-`Directory.Build.props` (or equivalent):
+`Directory.Build.props` (또는 동등):
 ```xml
 <PropertyGroup>
     <LibsodiumIncludeDir>$(SolutionDir)..\third_party\libsodium\include</LibsodiumIncludeDir>
@@ -645,62 +645,62 @@ ADD_COMMAND_PARAM(MPT_FLOAT_ARRAY_3, "SrcPos");
 ```
 
 ### 5.2 Windows SDK
-- `WindowsTargetPlatformVersion=10.0.26100.0` (or the company standard)
+- `WindowsTargetPlatformVersion=10.0.26100.0` (또는 회사 표준)
 
 ### 5.3 PlatformToolset
-- v143 recommended. v145 is also compatible (the libsodium static library is ABI-safe with a v143 build)
+- v143 권장. v145 도 호환 (libsodium 정적 라이브러리는 v143 빌드 ABI-safe)
 
 ### 5.4 UTF-8 BOM
-- .h/.cpp files containing Korean comments require a UTF-8 BOM (avoids the cp949 trail-byte problem)
+- 한글 주석 포함된 .h/.cpp 파일은 UTF-8 BOM 필수 (cp949 trail-byte 문제 회피)
 
 ---
 
-## 6. Integration verification checklist
+## 6. 통합 검증 체크리스트
 
-After introducing each Phase:
+각 Phase 도입 후:
 
-- [ ] Build succeeds (`Release|Win32`, v143)
-- [ ] New symbols confirmed (`strings <binary> | findstr <module>`)
-- [ ] Log shows the new environment variables recognized at match server startup
-- [ ] Client build + connection test
-- [ ] Handshake success log (when introducing Phase B)
-- [ ] Deliberate violation scenario → signal raised (when introducing Phase C/D)
-- [ ] Arrival at community-api confirmed (when introducing Phase E)
-- [ ] 1 week of operation on normal traffic → measure false-positive rate
-
----
-
-## 7. Common pitfalls during integration
-
-### 7.1 ECDHE KDF branching
-**Symptom**: `DecryptAEAD FAILED` on the first LOGIN packet
-**Cause**: server/client IKM diverge
-**Fix**: never branch on `#ifdef BUILD_MATCH_SERVER`. Unify on the canonical `min‖max` order.
-
-### 7.2 V2 flag flip timing
-**Symptom**: the ECDHE RESPONSE packet itself fails to decrypt
-**Cause**: client calls `SetV2Active(true)` before sending
-**Fix**: flip *after* sending.
-
-### 7.3 Hosts without AES-NI support
-**Symptom**: handshake OK, silent drops starting from the first v2 packet
-**Cause**: `Encrypt/Decrypt` depend on AES-NI
-**Fix**: `InitKey` returns an explicit false → diagnosable at the handshake stage.
-
-### 7.4 `_WIN32_WINNT=0x0501` in stdafx.h
-**Symptom**: `GetTickCount64` undeclared
-**Cause**: `_WIN32_WINNT` pinned low for WinXP compatibility
-**Fix**: use `std::chrono::steady_clock`.
-
-### 7.5 Including ZPACKEDBASICINFO directly
-**Symptom**: `ZPost.h not found` when building CSCommon
-**Cause**: CSCommon is a shared library linked on both client and server sides, so depending on a header from Gunz (client-only) causes (a) server build failure + (b) a cycle in the dependency graph. This dependency direction is deliberately blocked; attempting to work around it breaks the entire build system.
-**Fix**: unpack only the blob's first 4B fTime + the next 6B (short XYZ) raw (POD assumption — if the ZPACKEDBASICINFO layout changes in the future, the match server handler must be updated in sync).
+- [ ] 빌드 성공 (`Release|Win32`, v143)
+- [ ] 신규 심볼 확인 (`strings <binary> | findstr <module>`)
+- [ ] 매치서버 기동 시 신규 환경변수 인식 로그
+- [ ] 클라 빌드 + 접속 테스트
+- [ ] 핸드셰이크 성공 로그 (Phase B 도입 시)
+- [ ] 의도적 위반 시나리오 → 시그널 발생 (Phase C/D 도입 시)
+- [ ] community-api 도착 확인 (Phase E 도입 시)
+- [ ] 정상 트래픽에서 1 주 운용 → false-positive 비율 측정
 
 ---
 
-## 8. References
+## 7. 통합 시 자주 발생하는 함정
 
-- Per-module details → [`modules/`](./modules/)
-- Validation procedure → [`06-validation-kit.md`](./06-validation-kit.md)
-- Operations → [`05-operations-runbook.md`](./05-operations-runbook.md)
+### 7.1 ECDHE KDF 분기
+**증상**: 첫 LOGIN 패킷 `DecryptAEAD FAILED`
+**원인**: 서버/클라 IKM 갈라짐
+**해결**: `#ifdef BUILD_MATCH_SERVER` 분기 절대 금지. canonical `min‖max` 순서 통일.
+
+### 7.2 V2 플래그 flip 타이밍
+**증상**: ECDHE RESPONSE 패킷 자체 디크립트 실패
+**원인**: 클라가 송신 전에 `SetV2Active(true)` 호출
+**해결**: 송신 *후* flip.
+
+### 7.3 AES-NI 미지원 호스트
+**증상**: 핸드셰이크 OK, 첫 v2 패킷부터 침묵 드롭
+**원인**: `Encrypt/Decrypt` 가 AES-NI 의존
+**해결**: `InitKey` 가 명시적 false 반환 → 핸드셰이크 단계에서 진단 가능.
+
+### 7.4 stdafx.h 의 `_WIN32_WINNT=0x0501`
+**증상**: `GetTickCount64` undeclared
+**원인**: WinXP 호환을 위해 `_WIN32_WINNT` 가 낮게 고정
+**해결**: `std::chrono::steady_clock` 사용.
+
+### 7.5 ZPACKEDBASICINFO 직접 include
+**증상**: CSCommon 빌드 시 `ZPost.h not found`
+**원인**: CSCommon 은 클라/서버 양측에 링크되는 공용 라이브러리이므로, Gunz (클라 전용) 의 헤더에 의존하면 (a) 서버 빌드 실패 + (b) 의존성 그래프 사이클 발생. 의도적으로 차단된 의존 방향이며 우회 시도 시 빌드 시스템 전체가 깨짐.
+**해결**: blob 의 첫 4B fTime + 다음 6B (short XYZ) 만 raw 로 언팩 (POD 가정 — 향후 ZPACKEDBASICINFO 레이아웃 변경 시 매치서버 핸들러도 동기 수정 필요).
+
+---
+
+## 8. 참고
+
+- 모듈별 상세 → [`modules/`](./modules/)
+- 검증 절차 → [`06-validation-kit.md`](./06-validation-kit.md)
+- 운영 → [`05-operations-runbook.md`](./05-operations-runbook.md)

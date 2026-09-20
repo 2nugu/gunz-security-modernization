@@ -1,7 +1,9 @@
+**English** | [한국어](../ko/modules/06-movement-validator.md)
+
 # Module 06 — Movement Validator
 
 ## Purpose
-스피드핵 / 텔레포트핵 / 플라이핵의 서버측 탐지. POSITION_TICK 32 Hz 데이터 소비.
+Server-side detection of speed hacks / teleport hacks / fly hacks. Consumes POSITION_TICK 32 Hz data.
 
 ## Interface
 
@@ -9,10 +11,10 @@
 namespace Security {
 
 struct MovementLimits {
-    float maxDashSpeedUPS    = 1200.f;  // 합법 최고 ~1500 (대시+버터링 스파이크)
-    float speedTolerance     = 1.5f;    // 1200 × 1.5 = 1800 u/s 컷
-    float teleportDistPerSec = 5000.f;  // 5000 u/s 초과 = teleport
-    int   flyhackAirtimeMs   = 5000;    // 5 초 이상 airtime
+    float maxDashSpeedUPS    = 1200.f;  // legitimate max ~1500 (dash + butterfly spike)
+    float speedTolerance     = 1.5f;    // 1200 × 1.5 = 1800 u/s cut
+    float teleportDistPerSec = 5000.f;  // over 5000 u/s = teleport
+    int   flyhackAirtimeMs   = 5000;    // 5 s or more of airtime
 };
 
 class MMovementValidator {
@@ -21,7 +23,7 @@ public:
 
     void SetLimits(const MovementLimits& lim);
 
-    // 매 POSITION_TICK 에서 호출
+    // called on every POSITION_TICK
     void Validate(uint32_t uidHigh, uint32_t uidLow,
                   float x, float y, float z, long long tMs);
 
@@ -35,7 +37,7 @@ private:
 }
 ```
 
-## 검증 항목
+## Validation Items
 
 ### Speed
 ```
@@ -44,41 +46,41 @@ dist = sqrt(dx² + dy² + dz²)
 speed = dist / (dt / 1000)
 
 if speed > limits.maxDashSpeedUPS × limits.speedTolerance:
-    → SpeedHack 시그널, 연속위반 누적
+    → SpeedHack signal, consecutive violations accumulated
 ```
 
 ### Teleport
 ```
 if speed > limits.teleportDistPerSec:
-    if !checkAlive (리스폰/워프 면제):
-        → TeleportSuspect 시그널
+    if !checkAlive (respawn/warp exemption):
+        → TeleportSuspect signal
 ```
 
 ### FlyHack (heuristic)
 ```
-if z 가 base 위에서 일정 시간 (airtime > flyhackAirtimeMs) 유지:
-    → FlyHack 시그널, severity Medium 캡 (BSP 미통합 → 점프맵 false-positive 가능)
+if z stays above base for a sustained period (airtime > flyhackAirtimeMs):
+    → FlyHack signal, severity capped at Medium (BSP not integrated → jump-map false positives possible)
 ```
 
-## Severity 승급
+## Severity Escalation
 
-| 연속 위반 | severity |
+| Consecutive violations | severity |
 |----------|---------|
 | 1 | Low |
 | 3 | Medium |
 | 5 | High |
 | 10 | Critical |
 
-리셋 조건: 정상 행동 N 분 또는 매치 종료.
+Reset condition: N minutes of normal behavior or match end.
 
 ## Integration Points
-- `CSCommon/Security/MMovementValidator.{h,cpp}` 신규
-- POSITION_TICK 핸들러에서 호출 (1줄)
-- `ObjectRemove` 에서 `OnPlayerLeave` 호출
+- `CSCommon/Security/MMovementValidator.{h,cpp}` new
+- Called from the POSITION_TICK handler (1 line)
+- Call `OnPlayerLeave` from `ObjectRemove`
 
 ## Configuration
 
-| 환경변수 | 기본 |
+| Environment variable | Default |
 |---------|------|
 | `MOVEMENT_MAX_SPEED_UPS` | 1200 |
 | `MOVEMENT_SPEED_TOLERANCE` | 1.5 |
@@ -86,41 +88,41 @@ if z 가 base 위에서 일정 시간 (airtime > flyhackAirtimeMs) 유지:
 | `MOVEMENT_FLYHACK_AIRTIME_MS` | 5000 |
 
 ## Failure Modes
-| 조건 | 결과 |
+| Condition | Result |
 |------|------|
-| 합법 대시 (~1500 u/s) | 1800 (1200×1.5) 미만 → 통과 |
-| 리스폰 직후 좌표 점프 | `CheckAlive` 면제 |
-| 리스폰 직전 dt = 0 | dt > 0 가드 |
-| 점프맵 (높은 발판 연속) | FlyHack heuristic Medium 캡 — 운영자 리뷰 |
+| Legitimate dash (~1500 u/s) | Below 1800 (1200×1.5) → passes |
+| Position jump right after respawn | `CheckAlive` exemption |
+| dt = 0 right before respawn | dt > 0 guard |
+| Jump maps (successive high platforms) | FlyHack heuristic capped at Medium — operator review |
 
 ## Test Vectors
 
 ```
-정상 대시:
+Normal dash:
   Record(0, 0, 0, 1000)
   Record(150, 0, 0, 1100)  // 1500 u/s
-  → 통과 (1500 < 1800)
+  → passes (1500 < 1800)
 
-스피드핵:
+Speed hack:
   Record(0, 0, 0, 1000)
   Record(300, 0, 0, 1100)  // 3000 u/s
-  → SpeedHack Low (1회)
-  Record(600, 0, 0, 1200)  // 3000 u/s 누적 2회 (Low)
-  Record(900, 0, 0, 1300)  // 3000 u/s 3회 → Medium 승급
+  → SpeedHack Low (1st)
+  Record(600, 0, 0, 1200)  // 3000 u/s, 2nd accumulated (Low)
+  Record(900, 0, 0, 1300)  // 3000 u/s, 3rd → escalates to Medium
 
-텔레포트:
+Teleport:
   Record(0, 0, 0, 1000)
   Record(10000, 0, 0, 1100)  // 100,000 u/s
-  → TeleportSuspect (severity 별도 정책)
+  → TeleportSuspect (separate severity policy)
 ```
 
 ## Limitations
-- BSP 지형 샘플링 미통합 → 정밀 noclip 미검출
-- z-축 판정이 heuristic — 점프맵 false-positive 가능
-- 합법 텔레포트 (워프, 리스폰) 면제는 `CheckAlive` 에 의존 — 면제 우회 시도 시 추가 검증 필요
+- BSP terrain sampling not integrated → precise noclip not detected
+- z-axis judgment is heuristic — jump-map false positives possible
+- Exemption for legitimate teleports (warp, respawn) depends on `CheckAlive` — additional validation needed if exemption bypass is attempted
 
 ## Cross-References
-- 인프라: [`05-position-history.md`](./05-position-history.md)
-- 시그널 처리: [`08-signal-collector.md`](./08-signal-collector.md)
-- 카탈로그: [`../04-anticheat-catalog.md`](../04-anticheat-catalog.md) §2.1
-- 통합: [`../08-integration-guide.md`](../08-integration-guide.md) §2.6
+- Infrastructure: [`05-position-history.md`](./05-position-history.md)
+- Signal handling: [`08-signal-collector.md`](./08-signal-collector.md)
+- Catalog: [`../04-anticheat-catalog.md`](../04-anticheat-catalog.md) §2.1
+- Integration: [`../08-integration-guide.md`](../08-integration-guide.md) §2.6

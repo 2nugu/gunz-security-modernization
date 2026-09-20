@@ -1,155 +1,157 @@
+**English** | [한국어](./ko/07-whats-not-included.md)
+
 # What's NOT Included
 
-> **독자**: 모든 stakeholder
-> **목적**: 본 패키지가 다루지 않는 영역 명시. 정직성 신호로서, 회사가 "이걸 받으면 무엇이 해결되고 무엇이 남는가" 를 명확히 알 수 있어야 한다.
+> **Readers**: all stakeholders
+> **Purpose**: state explicitly the areas this package does not cover. As an honesty signal, the company must be able to know clearly "if we take this, what gets solved and what remains".
 
 ---
 
-## 1. 클라이언트 안티치트
+## 1. Client Anti-Cheat
 
-| 항목 | 본 패키지 | 별도 작업 권장 |
+| Item | This package | Separate work recommended |
 |------|----------|---------------|
-| 메모리 보호 (PAGE_GUARD, anti-tamper) | ✗ | ✅ |
-| DLL injection 방어 | ✗ | ✅ |
-| 디버거 탐지 (IsDebuggerPresent 우회 대응) | ✗ | ✅ |
-| 코드 무결성 검사 (CRC / 해시) | ✗ | ✅ |
-| 후킹 탐지 (IAT/EAT/inline) | ✗ | ✅ |
-| 가상 머신 탐지 | ✗ | △ (일반적으로 권장하지 않음) |
-| 클라 패킷 변조 자체 차단 | ✗ | ✅ |
-| 외부 안티치트 솔루션 통합 (XIGNCODE 등) | ✗ | 회사 결정 |
+| Memory protection (PAGE_GUARD, anti-tamper) | ✗ | ✅ |
+| DLL injection defense | ✗ | ✅ |
+| Debugger detection (countering IsDebuggerPresent bypass) | ✗ | ✅ |
+| Code integrity check (CRC / hash) | ✗ | ✅ |
+| Hook detection (IAT/EAT/inline) | ✗ | ✅ |
+| Virtual machine detection | ✗ | △ (generally not recommended) |
+| Blocking client packet tampering itself | ✗ | ✅ |
+| External anti-cheat solution integration (XIGNCODE, etc.) | ✗ | Company decision |
 
-본 패키지는 **서버측 검증** 중심. 클라 메모리 / 코드 영역 보호는 영역이 다르고, 회사 내부에서 별도 솔루션 (자체 또는 외부 안티치트 벤더) 을 운용하는 것이 표준.
+This package is centered on **server-side validation**. Client memory / code region protection is a different domain, and the standard is for the company to operate a separate solution internally (its own or an external anti-cheat vendor).
 
 ---
 
-## 2. 정밀 노클립 / 지형 검증
+## 2. Precise Noclip / Terrain Validation
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| BSP 지형 샘플링 | ✗ | RealSpace2 엔진 링크 선행 필요 |
-| 벽 통과 감지 | ✗ | 동일 |
-| 지형 absolute Z 범위 검사 | △ | FlyHack heuristic 만 (점프맵 false-positive 위험) |
-| 맵 바운딩박스 절대 좌표 체크 | ✗ | 향후 작업 항목 |
+| BSP terrain sampling | ✗ | Requires linking the RealSpace2 engine first |
+| Wall pass-through detection | ✗ | Same |
+| Terrain absolute Z range check | △ | FlyHack heuristic only (false-positive risk on jump maps) |
+| Map bounding-box absolute coordinate check | ✗ | Future work item |
 
-정밀 노클립 탐지는 RealSpace2 의 BSP 트리에 접근해 위치 샘플의 지형 안/밖 판정이 필요. 본 패키지는 엔진 통합 단계까지 진행하지 않음.
+Precise noclip detection requires access to RealSpace2's BSP tree to judge whether a position sample is inside or outside the terrain. This package does not proceed to the engine integration stage.
 
 ---
 
-## 3. 인-게임 자원 검증
+## 3. In-Game Resource Validation
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| 서버 권위 탄창 카운트 | ✗ | 무탄핵 차단에 필요. 별도 작업 |
-| 무기별 max damage 테이블 (구조) | △ | Module 13 에 구조 있음. 회사 라이브 GunZ 의 정확한 밸런스 표는 회사 측 데이터로 교체 필요 |
-| Hit zone (head/body/legs) 정밀 판정 | ✗ | Module 13 은 Body 기본값. 정확한 hit zone 은 RealSpace2 collision 통합 필요 |
-| Shotgun 다중 펠릿 정책 | ✗ | 펠릿 단위 vs 합산 보고 결정 필요 |
-| Splash 데미지 (Rocket/Grenade) radius 자동 계산 | ✗ | radius 내 victim 자동 검출 미구현 |
-| 아이템/스킬 쿨다운 권위 | ✗ | 본 패키지는 발사 간격 (RapidFire) 만 검증 |
-| 캐릭터 스탯 권위 | ✗ | 본 패키지는 위치/공격/HP 만 검증 |
-| 합법 회복 (의료품, 스킬) 등록 API | △ | Module 13 의 `RecordHPRestore(amount, source)` 인터페이스만 명시. 실제 게임 로직 통합은 별도 |
+| Server-authoritative magazine count | ✗ | Needed to block infinite-ammo hacks. Separate work |
+| Per-weapon max damage table (structure) | △ | Structure exists in Module 13. The exact balance table of the company's live GunZ must be replaced with company-side data |
+| Precise hit zone (head/body/legs) judgment | ✗ | Module 13 defaults to Body. Exact hit zones require RealSpace2 collision integration |
+| Shotgun multi-pellet policy | ✗ | Decision needed: per-pellet vs aggregated reporting |
+| Splash damage (Rocket/Grenade) automatic radius calculation | ✗ | Automatic detection of victims within radius not implemented |
+| Item/skill cooldown authority | ✗ | This package validates fire interval (RapidFire) only |
+| Character stat authority | ✗ | This package validates position/attack/HP only |
+| Legitimate recovery (medkits, skills) registration API | △ | Only the `RecordHPRestore(amount, source)` interface of Module 13 is specified. Actual game logic integration is separate |
 
 ---
 
-## 4. 고급 안티치트 시그널
+## 4. Advanced Anti-Cheat Signals
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| 에이밍 지속성 (마이크로 떨림) | ✗ | 입력 스트림 서버 송신 + 클라 안티치트 통합 필요 |
-| 조준 궤적 2차 미분 분석 | ✗ | 동일 |
-| 조건부 정확도 (선택적 통계) | ✗ | 매치 단위 통계 인프라 구축 필요 |
-| 온오프 에임봇 탐지 | ✗ | 미해결 ([`04-anticheat-catalog.md`](./04-anticheat-catalog.md) §5) |
-| 벽 너머 pre-aim | ✗ | 시야 계산 인프라 필요 |
-| ESP / 박스핵 탐지 | ✗ | 클라 메모리 보호 영역 |
-| 맵핵 직접 탐지 | ✗ | 클라 메모리 보호 영역 |
-| 머신러닝 기반 행동 분석 | ✗ | 별도 프로젝트 |
+| Aim persistence (micro-jitter) | ✗ | Requires sending the input stream to the server + client anti-cheat integration |
+| Second-derivative analysis of aim trajectory | ✗ | Same |
+| Conditional accuracy (selective statistics) | ✗ | Requires building per-match statistics infrastructure |
+| On/off aimbot detection | ✗ | Unresolved ([`04-anticheat-catalog.md`](./04-anticheat-catalog.md) §5) |
+| Pre-aim through walls | ✗ | Requires line-of-sight computation infrastructure |
+| ESP / box hack detection | ✗ | Client memory protection domain |
+| Direct map hack detection | ✗ | Client memory protection domain |
+| Machine-learning-based behavior analysis | ✗ | Separate project |
 
 ---
 
-## 5. 네트워크 / 프로토콜
+## 5. Network / Protocol
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| TLS 1.3 로그인 채널 래퍼 | ✗ | 계획 단계 (Phase 7) |
-| ASIO 비동기 소켓 | ✗ | 성능 최적화, 우선순위 낮음 |
-| QUIC / UDP 전환 | ✗ | 게임 프로토콜 재설계 영역 |
-| v1 / v2 negotiation | ✗ | 현재 cutover 가정. 점진 도입은 별도 작업 |
-| Cross-region matchmaking | ✗ | 본 패키지 무관 |
+| TLS 1.3 login channel wrapper | ✗ | Planning stage (Phase 7) |
+| ASIO asynchronous sockets | ✗ | Performance optimization, low priority |
+| QUIC / UDP transition | ✗ | Game protocol redesign domain |
+| v1 / v2 negotiation | ✗ | Currently assumes cutover. Gradual rollout is separate work |
+| Cross-region matchmaking | ✗ | Unrelated to this package |
 
 ---
 
-## 6. 운영 도구
+## 6. Operations Tools
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| 시그널 대시보드 UI | ✗ | community-api 가 데이터 제공, 대시보드 별도 |
-| Ghost-mode 클라이언트 도구 | ✗ | 설계만, 구현 별도 |
-| 리플레이 자동 저장 / 북마크 | △ | 자동 녹화 활성화는 됨, 시그널 → 리플레이 연동은 별도 |
-| 운영자 RBAC 시스템 | ✗ | 권한 분리 권장만 |
-| 알림 시스템 (Slack/Discord 봇) | ✗ | community-api 위에서 별도 작업 |
-| 통계 대시보드 (Grafana 등) | ✗ | 메트릭 export 만, 대시보드 별도 |
+| Signal dashboard UI | ✗ | community-api provides the data; dashboard is separate |
+| Ghost-mode client tool | ✗ | Design only, implementation separate |
+| Automatic replay saving / bookmarks | △ | Automatic recording is enabled; signal → replay linkage is separate |
+| Operator RBAC system | ✗ | Privilege separation recommended only |
+| Notification system (Slack/Discord bots) | ✗ | Separate work on top of community-api |
+| Statistics dashboard (Grafana, etc.) | ✗ | Metrics export only, dashboard separate |
 
 ---
 
-## 7. 데이터 / DB
+## 7. Data / DB
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| MS-SQL → Postgres 마이그레이션 도구 | ✗ | Alembic 신규 스키마만, 데이터 이행 도구 별도 |
-| 기존 운영 데이터 ETL | ✗ | 동일 |
-| 백업 / 복구 정책 | ✗ | 회사 운영 정책 영역 |
-| 샤딩 / 레플리케이션 | ✗ | 회사 인프라 영역 |
+| MS-SQL → Postgres migration tool | ✗ | Alembic new schema only; data migration tool separate |
+| ETL of existing operational data | ✗ | Same |
+| Backup / recovery policy | ✗ | Company operating policy domain |
+| Sharding / replication | ✗ | Company infrastructure domain |
 
 ---
 
-## 8. 빌드 / 플랫폼
+## 8. Build / Platform
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| x64 빌드 | ✗ | Win32 만 검증. 우선순위 낮음 |
-| Linux 매치서버 | ✗ | Win32 IOCP 의존 |
-| ARM 빌드 | ✗ | 동일 |
-| 안드로이드 / iOS | ✗ | 모바일 GunZ 는 별도 프로젝트 |
-| Steam / 외부 플랫폼 통합 | ✗ | 회사 결정 |
+| x64 build | ✗ | Win32 only verified. Low priority |
+| Linux match server | ✗ | Win32 IOCP dependency |
+| ARM build | ✗ | Same |
+| Android / iOS | ✗ | Mobile GunZ is a separate project |
+| Steam / external platform integration | ✗ | Company decision |
 
 ---
 
-## 9. 게임 로직 / 컨텐츠
+## 9. Game Logic / Content
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| 신규 게임 모드 추가 | ✗ | 본 패키지는 보안만 |
-| 밸런싱 변경 | ✗ | 동일 |
-| 신규 무기 / 아이템 | ✗ | 동일 |
-| UI / UX 개선 | ✗ | 동일 |
-| 그래픽 / 셰이더 개선 | ✗ | 동일 |
-| 사운드 / VFX | ✗ | 동일 |
+| Adding new game modes | ✗ | This package is security only |
+| Balance changes | ✗ | Same |
+| New weapons / items | ✗ | Same |
+| UI / UX improvements | ✗ | Same |
+| Graphics / shader improvements | ✗ | Same |
+| Sound / VFX | ✗ | Same |
 
 ---
 
-## 10. 라이브 운영 통합
+## 10. Live Operations Integration
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| 라이브 GunZ 와의 wire 호환성 | ✗ | 회사 라이브 트리 검토 후 별도 작업 |
-| 회사 사내 Auth / Account 시스템 통합 | ✗ | 본 패키지는 독립 community-api |
-| 회사 사내 결제 / 캐시 시스템 통합 | ✗ | 별도 작업 |
-| 회사 사내 로깅 / 분석 통합 | ✗ | 별도 작업 |
-| 운영 정책 / SLA | ✗ | 회사 결정 |
+| Wire compatibility with live GunZ | ✗ | Separate work after reviewing the company's live tree |
+| Integration with the company's in-house Auth / Account system | ✗ | This package is a standalone community-api |
+| Integration with the company's in-house payment / cash system | ✗ | Separate work |
+| Integration with the company's in-house logging / analytics | ✗ | Separate work |
+| Operating policy / SLA | ✗ | Company decision |
 
 ---
 
-## 11. 검증
+## 11. Validation
 
-| 항목 | 본 패키지 | 사유 |
+| Item | This package | Reason |
 |------|----------|------|
-| 실기동 매치서버 ↔ 클라 핸드셰이크 로그 | ✗ | 빌드 검증만 완료, 실기동 스모크 미수행 |
-| 라이브 트래픽 분포 기반 임계값 튜닝 | ✗ | 공개 트리 자체 빌드 환경 추정값. 회사 트래픽 측정 후 재튜닝 권장 |
-| 10K+ 동시 접속 부하 테스트 | ✗ | 별도 인프라 필요 |
-| 보안 침투 테스트 (외부 감사) | ✗ | 회사 보안팀 또는 외부 감사 권장 |
-| 정적 분석 (Coverity, SonarQube) | ✗ | 회사 사내 분석 시스템에 등록 권장 |
+| Live-run match server ↔ client handshake logs | ✗ | Build verification only completed; live-run smoke test not performed |
+| Threshold tuning based on live traffic distribution | ✗ | Estimates from a self-built public-tree environment. Re-tuning after measuring company traffic recommended |
+| 10K+ concurrent connection load test | ✗ | Requires separate infrastructure |
+| Security penetration test (external audit) | ✗ | Company security team or external audit recommended |
+| Static analysis (Coverity, SonarQube) | ✗ | Registration in the company's in-house analysis system recommended |
 
 ---
 
-## 12. 한 줄 요약
+## 12. One-Line Summary
 
-본 패키지는 **(a) 오리지널 프로토콜 보안의 알려진 5개 공격 표면**, **(b) GunZ 본서버 플레이 + 공개 트리 빌드 테스트 기반 핵 패턴 카탈로그**, **(c) Novel 탐지 축 2종** 에 집중. 그 외 모든 영역은 회사 자체 작업 또는 별도 패키지로 다루는 것이 권장됨.
+This package focuses on **(a) the 5 known attack surfaces of the original protocol security**, **(b) a hack pattern catalog based on GunZ official-server play + public-tree build testing**, and **(c) 2 novel detection axes**. All other areas are recommended to be handled by the company's own work or by a separate package.

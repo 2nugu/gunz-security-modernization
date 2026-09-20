@@ -1,21 +1,23 @@
+**English** | [한국어](../ko/modules/12-match-uuid-pipeline.md)
+
 # Module 12 — match_uuid Lifecycle Pipeline
 
 ## Purpose
-모든 안티치트 시그널을 라운드 단위로 식별 가능하게 만드는 운영성 인프라. **라운드 단위 분석** 의 기반.
+Operational infrastructure that makes every anti-cheat signal identifiable per round. The foundation of **per-round analysis**.
 
-## 형식
+## Format
 
 ```
 match_uuid = "stage-<UID_HIGH>-<UID_LOW>-<EPOCH_SEC>"
 
-예: "stage-12345-67890-1714867200"
+e.g.: "stage-12345-67890-1714867200"
 ```
 
-64 자 미만 (community-api `match_uuid` 컬럼 65 자 — null terminator 포함).
+Under 64 characters (the community-api `match_uuid` column is 65 characters — including the null terminator).
 
 ## Interface
 
-### MMatchStage 측
+### MMatchStage side
 
 ```cpp
 class MMatchStage {
@@ -38,16 +40,16 @@ public:
 };
 ```
 
-### MSignalCollector 측 — 자동 스탬핑
+### MSignalCollector side — auto-stamping
 
 ```cpp
 class MSignalCollector {
-    // shard 마다 unordered_map<uid, char[65]> 매치 UUID
+    // per shard: unordered_map<uid, char[65]> match UUID
     void SetMatchUUID(uint32_t uidHigh, uint32_t uidLow, const char* uuid);
     void ClearMatchUUID(uint32_t uidHigh, uint32_t uidLow);
 
     void Push(uint32_t uidHigh, uint32_t uidLow, CheatSignal& sig) {
-        // sig.matchUUID 가 빈 값이면 shard 의 매치 UUID 로 자동 스탬핑
+        // if sig.matchUUID is empty, auto-stamp with the shard's match UUID
         if (sig.matchUUID[0] == '\0') {
             auto& shard = GetShard(uidHigh, uidLow);
             std::lock_guard lk(shard.mutex);
@@ -56,55 +58,55 @@ class MSignalCollector {
                 strncpy(sig.matchUUID, it->second.c_str(), sizeof(sig.matchUUID));
             }
         }
-        // ... shard 에 시그널 누적
+        // ... accumulate the signal in the shard
     }
 };
 ```
 
-## 라이프사이클
+## Lifecycle
 
 ```
-1. OnStageStart (pStage->StartGame() == true 분기)
+1. OnStageStart (pStage->StartGame() == true branch)
    ├─ pStage->GenerateMatchUUID()
-   └─ 모든 플레이어 순회:
+   └─ iterate over all players:
         Security::MSignalCollector::Instance().SetMatchUUID(uid.H, uid.L, uuid)
 
-2. 라운드 진행 중
+2. During the round
    └─ Validator → CheatSignal {matchUUID=""} → Collector.Push
-        → Push 시 자동으로 shard 의 UUID 로 스탬핑
+        → auto-stamped with the shard's UUID on Push
 
 3. StageFinishGame
-   ├─ 모든 플레이어 순회:
+   ├─ iterate over all players:
    │    Security::MSignalCollector::Instance().ClearMatchUUID(uid.H, uid.L)
    └─ pStage->ClearMatchUUID()
 
-4. ObjectRemove (player 이탈)
+4. ObjectRemove (player leaves)
    └─ Security::MSignalCollector::Instance().OnPlayerLeave(uid.H, uid.L)
-        → match_uuid 자동 정리
+        → match_uuid cleaned up automatically
 
-5. (필요 시) 다음 라운드 시작 → 1 부터 반복
+5. (If needed) next round starts → repeat from 1
 ```
 
-## 이중 정리 (Why)
+## Double Cleanup (Why)
 
-플레이어가 게임 종료 후 같은 스테이지에 남아 대기하는 시나리오:
-- `ObjectRemove` 가 호출되지 않음 (스테이지 이탈 아님)
-- 다음 라운드 시작 시 새 match_uuid 가 `SetMatchUUID` 로 덮어써짐
-- 그러나 라운드 종료 ~ 다음 라운드 시작 사이의 시그널이 **이전 UUID** 로 스탬핑되는 문제
+Scenario where players stay in the same stage and wait after the game ends:
+- `ObjectRemove` is not called (they did not leave the stage)
+- On the next round start, the new match_uuid is overwritten via `SetMatchUUID`
+- But signals between round end and next round start would be stamped with the **previous UUID**
 
-→ `StageFinishGame` 의 명시적 `ClearMatchUUID` 가 이 윈도우를 닫음.
+→ The explicit `ClearMatchUUID` in `StageFinishGame` closes this window.
 
 ## Integration Points
-- `MMatchStage.{h,cpp}` 에 `m_szMatchUUID` + 메서드 3개
-- `MMatchServer_Stage.cpp::OnStageStart` 의 `StartGame()==true` 분기 말미에 `GetObjBegin/End` 순회 + `SetMatchUUID`
-- `MMatchServer::StageFinishGame` 동일 순회 + `ClearMatchUUID`
-- `MMatchServer::ObjectRemove` 의 `OnPlayerLeave`
+- `m_szMatchUUID` + 3 methods in `MMatchStage.{h,cpp}`
+- `GetObjBegin/End` iteration + `SetMatchUUID` at the end of the `StartGame()==true` branch in `MMatchServer_Stage.cpp::OnStageStart`
+- Same iteration + `ClearMatchUUID` in `MMatchServer::StageFinishGame`
+- `OnPlayerLeave` in `MMatchServer::ObjectRemove`
 
-상세 → [`../08-integration-guide.md`](../08-integration-guide.md) §2.9, §2.10
+Details → [`../08-integration-guide.md`](../08-integration-guide.md) §2.9, §2.10
 
-## DB 스키마
+## DB Schema
 
-`community-api` 측 `anticheat_signals` 테이블에 `match_uuid VARCHAR(65)` 컬럼.
+`match_uuid VARCHAR(65)` column in the `anticheat_signals` table on the `community-api` side.
 
 Alembic migration `003_add_match_uuid_to_signals.py`:
 ```python
@@ -119,9 +121,9 @@ def downgrade():
     op.drop_column('anticheat_signals', 'match_uuid')
 ```
 
-## 운영 활용
+## Operational Use
 
-### 라운드 내 누적 시그널 조회
+### Query accumulated signals within a round
 ```sql
 SELECT player_uid_high, player_uid_low,
        signal_type, severity, COUNT(*) as cnt
@@ -131,7 +133,7 @@ GROUP BY player_uid_high, player_uid_low, signal_type, severity
 ORDER BY cnt DESC;
 ```
 
-### 가중 점수 라운드 단위 산출
+### Compute weighted score per round
 ```sql
 SELECT player_uid_high, player_uid_low,
        SUM(CASE severity
@@ -147,53 +149,53 @@ HAVING score > 50
 ORDER BY score DESC;
 ```
 
-### 의심 라운드 → 리플레이 매칭
+### Suspicious round → replay matching
 ```
 match_uuid = "stage-12345-67890-1714867200"
 → stage UID High = 12345, Low = 67890, epoch = 1714867200
-→ 리플레이 파일 검색 (저장 시 stage UID 기록되어 있어야 함)
+→ search replay files (stage UID must be recorded at save time)
 ```
 
 ## Configuration
-- 별도 환경변수 없음 (스테이지 시작/종료 자동 발생)
+- No dedicated environment variables (triggered automatically on stage start/end)
 
 ## Failure Modes
-| 조건 | 결과 |
+| Condition | Result |
 |------|------|
-| `OnStageStart` 호출 누락 | 시그널의 match_uuid 빈 값 — 라운드 단위 분석 불가 (다른 동작 정상) |
-| `StageFinishGame` Clear 누락 | 다음 라운드 시그널이 이전 UUID 로 스탬핑 |
-| `ObjectRemove` 누락 | shard 의 매치 UUID map 메모리 누수 |
-| 시계 후행 (epoch 동일) | match_uuid 충돌 가능 — stage UID 가 보통 충분히 unique 함 |
+| `OnStageStart` call missing | Signals have empty match_uuid — per-round analysis impossible (other behavior normal) |
+| `StageFinishGame` Clear missing | Next round's signals stamped with the previous UUID |
+| `ObjectRemove` missing | Memory leak in the shard's match UUID map |
+| Clock going backwards (same epoch) | Possible match_uuid collision — stage UID is usually unique enough |
 
 ## Test Vectors
 
 ```
-스테이지 시작:
+Stage start:
   pStage UID = (12345, 67890), epoch = 1714867200
   GenerateMatchUUID → "stage-12345-67890-1714867200"
   SetMatchUUID(playerA, "stage-...")
   SetMatchUUID(playerB, "stage-...")
 
-시그널 발생:
+Signal raised:
   Push(playerA, sig{type=WeaponSpoof, matchUUID=""})
-  → 자동 스탬핑 → sig.matchUUID = "stage-12345-67890-1714867200"
-  → community-api 보고 시 동일 값
+  → auto-stamped → sig.matchUUID = "stage-12345-67890-1714867200"
+  → same value when reported to community-api
 
-스테이지 종료:
+Stage end:
   ClearMatchUUID(playerA), ClearMatchUUID(playerB)
   pStage->ClearMatchUUID()
 
-이후 시그널:
+Subsequent signal:
   Push(playerA, sig{matchUUID=""})
-  → 자동 스탬핑 → sig.matchUUID = "" (정상, 라운드 외부)
+  → auto-stamped → sig.matchUUID = "" (normal, outside a round)
 ```
 
 ## Limitations
-- match_uuid 충돌 가능성 — stage UID + epoch 가 충돌하지 않는다는 가정. 분산 매치서버 환경에서는 서버 ID 추가 권장 (`stage-<server>-<H>-<L>-<epoch>`)
-- 라운드 외부 (대기실 등) 시그널은 match_uuid 가 빈 값 — 별도 분석 카테고리
+- Possible match_uuid collision — assumes stage UID + epoch do not collide. In a distributed match-server environment, adding a server ID is recommended (`stage-<server>-<H>-<L>-<epoch>`)
+- Signals outside a round (lobby, etc.) have an empty match_uuid — separate analysis category
 
 ## Cross-References
-- 시그널: [`08-signal-collector.md`](./08-signal-collector.md)
-- 보고: [`11-api-client-hmac.md`](./11-api-client-hmac.md)
-- 운영: [`../05-operations-runbook.md`](../05-operations-runbook.md) §2
-- 통합: [`../08-integration-guide.md`](../08-integration-guide.md) §2.9
+- Signals: [`08-signal-collector.md`](./08-signal-collector.md)
+- Reporting: [`11-api-client-hmac.md`](./11-api-client-hmac.md)
+- Operations: [`../05-operations-runbook.md`](../05-operations-runbook.md) §2
+- Integration: [`../08-integration-guide.md`](../08-integration-guide.md) §2.9

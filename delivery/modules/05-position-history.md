@@ -1,7 +1,9 @@
+**English** | [한국어](../ko/modules/05-position-history.md)
+
 # Module 05 — Position History Ring Buffer
 
 ## Purpose
-서버 권위 좌표 인프라. 안티치트 Validator 들이 소비할 좌표 시계열 보관. lag-comp / rewind 검증 기반.
+Server-authoritative coordinate infrastructure. Stores the coordinate time series consumed by the anti-cheat Validators. Foundation for lag-comp / rewind validation.
 
 ## Interface
 
@@ -19,10 +21,10 @@ public:
 
     void Record(float x, float y, float z, long long tMs);
 
-    // 가장 최근 샘플 (없으면 false)
+    // most recent sample (false if none)
     bool GetLatest(float outXYZ[3], long long* outTMs) const;
 
-    // tMs 시점의 보간 좌표 (선형 보간, 범위 밖이면 false)
+    // interpolated coordinates at tMs (linear interpolation, false if out of range)
     bool QueryAt(long long tMs, float outXYZ[3]) const;
 
 private:
@@ -34,36 +36,36 @@ private:
 }
 ```
 
-**STL-free 헤더** — `Sample` POD 만 노출. ABI 호환성 위협 회피 (CSCommon 이 v143/v145 양쪽 빌드되는 환경 대응).
+**STL-free header** — exposes only the `Sample` POD. Avoids ABI compatibility hazards (for environments where CSCommon is built under both v143/v145).
 
 ## Storage
-- 32 슬롯 ring buffer
-- 32 Hz 송신 기준 약 1 초 history
-- per-player 메모리: 32 × 16 B = 512 B
+- 32-slot ring buffer
+- About 1 second of history at a 32 Hz send rate
+- per-player memory: 32 × 16 B = 512 B
 
 ## Integration Points
-- `CSCommon/Security/MPositionHistory.{h,cpp}` 신규
-- `MMatchObject` 에 `Security::MPositionHistory m_PositionHistory` 멤버 + `GetPositionHistory()` 접근자
-- POSITION_TICK 핸들러에서 `Record()`
-- HIT_TICK 핸들러에서 `GetLatest()` (피해자 권위 좌표)
-- (향후) lag-comp hit validator 에서 `QueryAt(shotClientTMs - RTT/2)`
+- `CSCommon/Security/MPositionHistory.{h,cpp}` new
+- `Security::MPositionHistory m_PositionHistory` member on `MMatchObject` + `GetPositionHistory()` accessor
+- `Record()` in the POSITION_TICK handler
+- `GetLatest()` in the HIT_TICK handler (victim-authoritative coordinates)
+- (future) `QueryAt(shotClientTMs - RTT/2)` in the lag-comp hit validator
 
-## 좌표 송신
+## Coordinate Transmission
 - `MC_MATCH_POSITION_TICK = 2903` (MACHINE2MACHINE)
-- 32 Hz, 기존 `MC_PEER_BASICINFO` 옆에 piggyback
-- ZPACKEDBASICINFO blob 재사용 (첫 4B fTime + 다음 6B short XYZ)
-- 리플레이 모드 화이트리스트에 미포함 → 리플레이 중엔 자동 미송신 (안전)
+- 32 Hz, piggybacked next to the existing `MC_PEER_BASICINFO`
+- Reuses the ZPACKEDBASICINFO blob (first 4B fTime + next 6B short XYZ)
+- Not included in the replay-mode whitelist → automatically not sent during replay (safe)
 
 ## Configuration
-- `RING_SIZE = 32` (컴파일 상수)
-- 시간 소스: 서버측 `std::chrono::steady_clock` ms
+- `RING_SIZE = 32` (compile-time constant)
+- Time source: server-side `std::chrono::steady_clock` ms
 
 ## Failure Modes
-| 조건 | 결과 |
+| Condition | Result |
 |------|------|
-| 접속 직후 history 0 | `GetLatest` false → Validator 가 스킵 (false-positive 회피) |
-| dt 역행 (monotonicity 위반) | Validator 측에서 dt > 0 가드 |
-| ring 가득 후 wrap | head 이전 샘플 덮어씀 (의도된 동작) |
+| History 0 right after connecting | `GetLatest` false → Validator skips (false-positive avoidance) |
+| dt regression (monotonicity violation) | dt > 0 guard on the Validator side |
+| Wrap after the ring fills | Overwrites the sample before head (intended behavior) |
 
 ## Test Vectors
 
@@ -76,17 +78,17 @@ float xyz[3]; long long t;
 h.GetLatest(xyz, &t);  // → (100, 0, 0, 1100)
 
 float interp[3];
-h.QueryAt(1050, interp);  // → (50, 0, 0) (선형 보간)
-h.QueryAt(900, interp);   // → false (범위 밖)
+h.QueryAt(1050, interp);  // → (50, 0, 0) (linear interpolation)
+h.QueryAt(900, interp);   // → false (out of range)
 ```
 
 ## Limitations
-- 32 슬롯은 32 Hz 기준 1 초 이력. 더 긴 lag-comp 윈도우가 필요하면 슬롯 수 증가 필요
-- 위치만 저장 — anim bone / weapon orientation / view angle 미포함 (정밀 hit validation 에 필요)
-- 보간이 선형 — 가속 곡선이 큰 이동 (대시 시작점 등) 에서 오차 가능
+- 32 slots is 1 second of history at 32 Hz. If a longer lag-comp window is needed, the slot count must be increased
+- Stores position only — anim bone / weapon orientation / view angle not included (needed for precise hit validation)
+- Interpolation is linear — error possible on movements with a large acceleration curve (dash start points, etc.)
 
 ## Cross-References
-- 소비자 (Movement): [`06-movement-validator.md`](./06-movement-validator.md)
-- 소비자 (Combat): [`07-combat-validator.md`](./07-combat-validator.md)
-- 소비자 (PositionLie novel): [`10-position-lie-novel.md`](./10-position-lie-novel.md)
-- 통합: [`../08-integration-guide.md`](../08-integration-guide.md) §2.6
+- Consumer (Movement): [`06-movement-validator.md`](./06-movement-validator.md)
+- Consumer (Combat): [`07-combat-validator.md`](./07-combat-validator.md)
+- Consumer (PositionLie novel): [`10-position-lie-novel.md`](./10-position-lie-novel.md)
+- Integration: [`../08-integration-guide.md`](../08-integration-guide.md) §2.6
